@@ -472,7 +472,7 @@ components:
           type: string
           format: password
           minLength: 8
-          example: "SuperSecurePass123!"
+          example: "UserAccountPassword123"
         role:
           type: string
           enum: [PATIENT, DOCTOR, ADMIN]

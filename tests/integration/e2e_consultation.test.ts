@@ -14,12 +14,14 @@ describe('End-to-End Telemedicine Workflow', () => {
   let consultationId: string;
 
   beforeAll(async () => {
+    const MOCK_PASSWORD = 'test_mock_password_for_e2e_testing';
+
     // 1. Register Doctor
     const docRes = await request(app)
       .post('/api/v1/auth/register')
       .send({
         email: `dr.e2e.${Date.now()}@amrutam.co.in`,
-        password: 'DoctorPassword123!',
+        password: MOCK_PASSWORD,
         role: 'DOCTOR',
         firstName: 'Vaidya',
         lastName: 'E2E',
@@ -34,7 +36,7 @@ describe('End-to-End Telemedicine Workflow', () => {
       .post('/api/v1/auth/register')
       .send({
         email: `patient.e2e.${Date.now()}@amrutam.co.in`,
-        password: 'PatientPassword123!',
+        password: MOCK_PASSWORD,
         role: 'PATIENT',
         firstName: 'Arjun',
         lastName: 'Patel',
@@ -47,7 +49,7 @@ describe('End-to-End Telemedicine Workflow', () => {
       .post('/api/v1/auth/register')
       .send({
         email: `admin.e2e.${Date.now()}@amrutam.co.in`,
-        password: 'AdminPassword123!',
+        password: MOCK_PASSWORD,
         role: 'ADMIN',
         firstName: 'System',
         lastName: 'Admin',

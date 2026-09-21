@@ -3,12 +3,13 @@ import { authenticator } from 'otplib';
 
 describe('AuthService - Authentication & MFA Security', () => {
   const testEmail = `test.user.${Date.now()}@amrutam.co.in`;
+  const MOCK_TEST_PASSWORD = 'test_mock_user_password_987';
   let userId = '';
 
   it('should register a new patient user with hashed credentials', async () => {
     const res = await authService.register({
       email: testEmail,
-      password: 'SuperSecurePassword123!',
+      password: MOCK_TEST_PASSWORD,
       role: 'PATIENT',
       firstName: 'Rohan',
       lastName: 'Verma',
@@ -26,7 +27,7 @@ describe('AuthService - Authentication & MFA Security', () => {
     await expect(
       authService.register({
         email: testEmail,
-        password: 'AnotherPassword123!',
+        password: MOCK_TEST_PASSWORD,
         role: 'PATIENT',
         firstName: 'Duplicate',
         lastName: 'User',
@@ -37,7 +38,7 @@ describe('AuthService - Authentication & MFA Security', () => {
   it('should successfully log in with valid credentials', async () => {
     const res = await authService.login({
       email: testEmail,
-      password: 'SuperSecurePassword123!',
+      password: MOCK_TEST_PASSWORD,
     });
 
     expect(res.tokens?.accessToken).toBeDefined();
@@ -48,7 +49,7 @@ describe('AuthService - Authentication & MFA Security', () => {
     await expect(
       authService.login({
         email: testEmail,
-        password: 'WrongPassword!',
+        password: 'incorrect_test_password',
       })
     ).rejects.toThrow('Invalid email or password');
   });
