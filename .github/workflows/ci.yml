@@ -15,9 +15,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: amrutam_admin
-          POSTGRES_PASSWORD: amrutam_secure_pass_2026
-          POSTGRES_DB: amrutam_telemedicine
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
         ports:
           - 5432:5432
         options: >-
@@ -59,7 +59,7 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
-          DATABASE_URL: postgresql://amrutam_admin:amrutam_secure_pass_2026@localhost:5432/amrutam_telemedicine
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test_jwt_secret_must_be_at_least_32_characters_long!
           JWT_REFRESH_SECRET: test_refresh_jwt_secret_must_be_at_least_32_characters_long!

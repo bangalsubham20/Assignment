@@ -5,7 +5,8 @@ import { logger } from '../telemetry/logger';
 export async function runSeed() {
   logger.info('Starting database seeding...');
 
-  const passwordHash = await bcrypt.hash('Amrutam@2026', 10);
+  const defaultSeedPassword = process.env.SEED_DEFAULT_PASSWORD || 'DevDemoPass#123';
+  const passwordHash = await bcrypt.hash(defaultSeedPassword, 10);
 
   // 1. Seed Admin
   const adminEmail = 'admin@amrutam.co.in';
