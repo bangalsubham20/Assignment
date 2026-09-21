@@ -1,0 +1,689 @@
+openapi: 3.0.3
+info:
+  title: Amrutam Telemedicine Backend API
+  description: Production-grade RESTful API for Amrutam's Telemedicine System, supporting 100k daily consultations with distributed locking, idempotency, role-based access control (RBAC), and HIPAA/DISHA compliance.
+  version: 1.0.0
+  contact:
+    name: Amrutam Engineering Team
+    email: engineering@amrutam.co.in
+servers:
+  - url: http://localhost:4000/api/v1
+    description: Local Development Server
+  - url: https://api.amrutam.global/api/v1
+    description: Production Cluster
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new patient or doctor
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      summary: Authenticate user & return JWT tokens
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/mfa/setup:
+    post:
+      summary: Generate TOTP secret and QR code for Multi-Factor Authentication
+      tags: [Authentication]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: MFA setup details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                  qrCodeUrl:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/mfa/verify:
+    post:
+      summary: Verify TOTP token and enable MFA
+      tags: [Authentication]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  example: "123456"
+      responses:
+        '200':
+          description: MFA verified and activated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/refresh:
+    post:
+      summary: Rotate and refresh access token
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Refreshed tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /doctors:
+    get:
+      summary: Search and filter verified doctors
+      tags: [Doctors & Search]
+      parameters:
+        - name: specialty
+          in: query
+          schema:
+            type: string
+          description: Filter by specialty (e.g. AYURVEDA, PANCHAKARMA)
+        - name: maxFee
+          in: query
+          schema:
+            type: number
+          description: Maximum consultation fee
+        - name: minRating
+          in: query
+          schema:
+            type: number
+          description: Minimum rating threshold
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of matched doctors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DoctorProfile'
+                  total:
+                    type: integer
+
+  /doctors/{id}:
+    get:
+      summary: Get doctor details by ID
+      tags: [Doctors & Search]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /doctors/slots:
+    post:
+      summary: Create doctor availability slots
+      tags: [Doctors & Availability]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slots]
+              properties:
+                slots:
+                  type: array
+                  items:
+                    type: object
+                    required: [startTime, endTime]
+                    properties:
+                      startTime:
+                        type: string
+                        format: date-time
+                      endTime:
+                        type: string
+                        format: date-time
+      responses:
+        '201':
+          description: Slots created successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /doctors/{id}/slots:
+    get:
+      summary: Get available slots for a specific doctor
+      tags: [Doctors & Availability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Slot'
+
+  /consultations/book:
+    post:
+      summary: Concurrency-safe slot booking with idempotency
+      tags: [Consultations]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookConsultationRequest'
+      responses:
+        '201':
+          description: Consultation reserved, pending payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Conflict (Slot already booked or request currently in progress)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /consultations/{id}/cancel:
+    post:
+      summary: Cancel consultation & release slot
+      tags: [Consultations]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Consultation cancelled and slot restored
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/verify:
+    post:
+      summary: Verify payment capture and confirm consultation
+      tags: [Payments]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consultationId, paymentId]
+              properties:
+                consultationId:
+                  type: string
+                  format: uuid
+                paymentId:
+                  type: string
+                status:
+                  type: string
+                  enum: [SUCCESS, FAILED]
+      responses:
+        '200':
+          description: Payment confirmed and consultation activated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /prescriptions:
+    post:
+      summary: Doctor issues encrypted digital prescription
+      tags: [Prescriptions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrescriptionRequest'
+      responses:
+        '201':
+          description: Prescription issued with digital signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrescriptionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /prescriptions/{consultationId}:
+    get:
+      summary: Retrieve and decrypt prescription for authorized party
+      tags: [Prescriptions]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Decrypted prescription details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptedPrescription'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/analytics:
+    get:
+      summary: Telemedicine platform operational analytics
+      tags: [Admin & Analytics]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Platform performance metrics and revenue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /audit/logs:
+    get:
+      summary: Query system audit trails for compliance
+      tags: [Audit & Compliance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log records
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Unique UUID token to guarantee atomic, duplicate-safe write execution.
+
+  responses:
+    BadRequest:
+      description: Invalid input or validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient privileges for this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource conflict or duplicate state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, role, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "patient@amrutam.co.in"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "SuperSecurePass123!"
+        role:
+          type: string
+          enum: [PATIENT, DOCTOR, ADMIN]
+          example: "PATIENT"
+        firstName:
+          type: string
+          example: "Aarav"
+        lastName:
+          type: string
+          example: "Sharma"
+        specialty:
+          type: string
+          example: "AYURVEDA"
+        consultationFee:
+          type: number
+          example: 750
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            role:
+              type: string
+        tokens:
+          $ref: '#/components/schemas/AuthTokens'
+        mfaRequired:
+          type: boolean
+
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: string
+          example: "15m"
+
+    DoctorProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        specialty:
+          type: string
+        experienceYears:
+          type: integer
+        consultationFee:
+          type: number
+        rating:
+          type: number
+        totalReviews:
+          type: integer
+        isVerified:
+          type: boolean
+
+    Slot:
+      type: object
+      properties:
+        id:
+          type: string
+        doctorId:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [AVAILABLE, LOCKED, BOOKED]
+
+    BookConsultationRequest:
+      type: object
+      required: [doctorId, slotId, symptoms]
+      properties:
+        doctorId:
+          type: string
+          format: uuid
+        slotId:
+          type: string
+          format: uuid
+        symptoms:
+          type: string
+          example: "Chronic joint stiffness and digestion issues"
+
+    ConsultationResponse:
+      type: object
+      properties:
+        consultationId:
+          type: string
+        status:
+          type: string
+        doctorId:
+          type: string
+        patientId:
+          type: string
+        slotId:
+          type: string
+        amountDue:
+          type: number
+        expiresInSeconds:
+          type: integer
+
+    CreatePrescriptionRequest:
+      type: object
+      required: [consultationId, medicalNotes, medications]
+      properties:
+        consultationId:
+          type: string
+          format: uuid
+        medicalNotes:
+          type: string
+          example: "Patient exhibits Vata imbalance. Recommended dietary moderation and herbs."
+        medications:
+          type: array
+          items:
+            type: object
+            required: [name, dosage, frequency, days]
+            properties:
+              name:
+                type: string
+                example: "Ashwagandha Churna"
+              dosage:
+                type: string
+                example: "1 teaspoon"
+              frequency:
+                type: string
+                example: "Twice daily with warm milk"
+              days:
+                type: integer
+                example: 30
+
+    PrescriptionResponse:
+      type: object
+      properties:
+        prescriptionId:
+          type: string
+        consultationId:
+          type: string
+        digitalSignature:
+          type: string
+        createdAt:
+          type: string
+
+    DecryptedPrescription:
+      type: object
+      properties:
+        prescriptionId:
+          type: string
+        consultationId:
+          type: string
+        doctorName:
+          type: string
+        patientName:
+          type: string
+        medicalNotes:
+          type: string
+        medications:
+          type: array
+          items:
+            type: object
+        digitalSignature:
+          type: string
+        issuedAt:
+          type: string
+
+    AnalyticsResponse:
+      type: object
+      properties:
+        totalConsultations:
+          type: integer
+        dailyConsultations:
+          type: integer
+        totalRevenue:
+          type: number
+        activeDoctors:
+          type: integer
+        averageDoctorRating:
+          type: number
+        p95LatencyMs:
+          type: number
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
+        correlationId:
+          type: string

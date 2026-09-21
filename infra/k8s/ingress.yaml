@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amrutam-backend-ingress
+  namespace: amrutam-prod
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  tls:
+    - hosts:
+        - api.amrutam.global
+      secretName: amrutam-tls-cert
+  rules:
+    - host: api.amrutam.global
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: amrutam-backend-service
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amrutam-config
+  namespace: amrutam-prod
+data:
+  PORT: "4000"
+  NODE_ENV: "production"
+  API_PREFIX: "/api/v1"
+  DB_HOST: "postgres-cluster.amrutam-prod.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "amrutam_telemedicine"
+  REDIS_HOST: "redis-cluster.amrutam-prod.svc.cluster.local"
+  REDIS_PORT: "6379"
+  LOG_LEVEL: "info"
+
